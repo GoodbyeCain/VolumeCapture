@@ -3,6 +3,7 @@
 
 import Foundation
 import MediaPlayer
+import Combine
 
 class VolumeCapture: NSObject {
     private let volumeView = {
@@ -14,6 +15,8 @@ class VolumeCapture: NSObject {
     private let audioSession = AVAudioSession.sharedInstance()
     private var volume: Float = 0.1
     private var block:(() -> Void)? = nil
+    private var cancelBag: [AnyCancellable] = []
+    @Published var fire = false
     
     deinit {
         audioSession.removeObserver(self, forKeyPath: "outputVolume")
@@ -36,6 +39,14 @@ class VolumeCapture: NSObject {
         ) { [weak self] _ in
             self?.configVolumeCapture()
         }
+        
+        // avoid repeat fire
+        $fire.dropFirst().debounce(for: .seconds(0.5), scheduler: RunLoop.main).sink { [weak self] _ in
+            self?.block?()
+            DispatchQueue.main.async {
+                self?.volumeView.updateVolume(value: 0.1)
+            }
+        }.store(in: &cancelBag)
     }
     
     private func configVolumeCapture() {
@@ -59,10 +70,10 @@ class VolumeCapture: NSObject {
         if keyPath == "outputVolume" {
             if let newVolume = change?[.newKey] as? Float {
                 if newVolume != 0.1 {
-                    block?()
-                    DispatchQueue.main.async {
+                    fire = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: {
                         self.volumeView.updateVolume(value: 0.1)
-                    }
+                    })
                 }
             }
         }
